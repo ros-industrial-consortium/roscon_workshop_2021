@@ -166,6 +166,14 @@
             rpy="${camera_cal['target_mount_to_target_rpy']['x']} ${camera_cal['target_mount_to_target_rpy']['y']} ${camera_cal['target_mount_to_target_rpy']['z']}" />
   </joint>
 
+  <link name="scan_frame"/>
+  <joint name="camera_to_scan_frame" type="fixed">
+    <parent link="cal_target_frame"/>
+    <child link="scan_frame"/>
+    <origin xyz="0.0 0.25 0.0" rpy="0 0 0"/>
+  </joint>
+
+
   <!-- Add TCP -->
   <link name="sand_tcp"/>
   <joint name="sand_tcp_joint" type="fixed">

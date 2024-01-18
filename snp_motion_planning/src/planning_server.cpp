@@ -415,11 +415,12 @@ private:
       // Set up composite instruction and environment
       tesseract_planning::CompositeInstruction program = createProgram(manip_info, fromMsg(req->tool_paths));
 
-      // Add the scan as a collision object to the environment
-      {
-        // Remove any previously added collision object
-        removeScanLink();
+      // Remove any previously added collision object
+      removeScanLink();
 
+      // Add the scan as a collision object to the environment
+      if (!req->mesh_filename.empty())
+      {
         auto collision_object_type = get<std::string>(node_, COLLISION_OBJECT_TYPE_PARAM);
         std::vector<tesseract_geometry::Geometry::Ptr> collision_objects;
         if (collision_object_type == "convex_mesh")

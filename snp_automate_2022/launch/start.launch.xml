@@ -3,6 +3,7 @@
   <arg name="sim_vision" default="True"/>
   <arg name="sim_robot" default="True"/>
   <arg name="bypass_execution" default="$(var sim_robot)" />
+  <arg name="scan_from_file" default="False"/>
   <arg name="mesh_file" default="$(find-pkg-share snp_automate_2022)/meshes/part_scan.ply"/>
   <arg name="scan_trajectory_file" default="$(find-pkg-share snp_automate_2022)/config/scan_traj.yaml"/>
   <arg name="verbose" default="True"/>
@@ -46,7 +47,7 @@
 
   <!-- Launch Calibration Node and Mutable Transform Publisher Node  -->
   <!--<include file="$(find-pkg-share r2_apps)/launch/hand_eye_launch.py"/>-->
-
+$(var follow_joint_trajectory_action)
   <!-- Launch Open3d Interface Node -->
   <group unless="$(var sim_vision)">
     <node pkg="industrial_reconstruction" exec="industrial_reconstruction">
@@ -78,6 +79,28 @@
     <param name="config_file" value="$(find-pkg-share snp_automate_2022)/config/tpp.yaml"/>
   </node>
 
+  <!-- Launch Scanning Node -->
+  <group if="$(var scan_from_file)">
+    <node pkg="snp_scanning" exec="scan_motion_plan_from_file_node">
+      <param name="scan_trajectory_file" value="$(var scan_trajectory_file)"/>
+    </node>
+  </group>
+
+  <group unless="$(var scan_from_file)">
+    <node pkg="snp_scanning" exec="scan_trajectory_node" output="screen">
+      <param name="target_frame" value="scan_frame"/>
+      <param name="base_frame" value="base_link"/>
+      <param name="plane_length" value="0.5"/>
+      <param name="plane_width" value="0.3"/>
+      <param name="x_spacing" value="0.1"/>
+      <param name="y_spacing" value="0.1"/>
+      <param name="height_offset" value="0.5"/>
+      <param name="motion_group" value="manipulator"/>
+      <param name="reference_frame" value="camera_color_optical_frame"/>
+      <param name="tcp_frame" value="sand_tcp"/>
+    </node>
+  </group>
+
   <!-- Launch Motion Planning Node -->
   <include file="$(find-pkg-share snp_motion_planning)/launch/planning_server.launch.xml">
     <arg name="robot_description" value="$(var robot_description)"/>
@@ -89,10 +112,6 @@
   <!-- Launch Motion Execution Node -->
   <node pkg="snp_motion_execution" exec="motion_execution_server">
     <param name="follow_joint_trajectory_action" value="$(var follow_joint_trajectory_action)"/>
-  </node>
-
-  <node pkg="snp_scanning" exec="scan_motion_plan_from_file_node">
-    <param name="scan_trajectory_file" value="$(var scan_trajectory_file)"/>
   </node>
 
   <group unless="$(var sim_robot)">
