@@ -38,7 +38,6 @@
 #include <tesseract_task_composer/core/task_composer_graph.h>
 #include <tesseract_task_composer/core/task_composer_node.h>
 #include <tesseract_task_composer/core/task_composer_plugin_factory.h>
-#include <tesseract_task_composer/planning/planning_task_composer_problem.h>
 #include <tesseract_task_composer/planning/profiles/iterative_spline_parameterization_profile.h>
 #include <tesseract_task_composer/planning/profiles/min_length_profile.h>
 #include <trajopt_common/eigen_conversions.hpp>
@@ -522,13 +521,12 @@ private:
       task->dump(tc_out_data);
     }
 
-    const std::string input_key = task->getInputKeys().front();
-    const std::string output_key = task->getOutputKeys().front();
+    const std::string input_key = task->getInputKeys().get("program");
+    const std::string output_key = task->getOutputKeys().get("program");
     auto task_data = std::make_shared<tesseract_planning::TaskComposerDataStorage>();
     task_data->setData(input_key, program);
-    tesseract_planning::TaskComposerProblem::Ptr problem =
-        std::make_shared<tesseract_planning::PlanningTaskComposerProblem>(env_, profile_dict);
-    problem->dotgraph = true;
+    task_data->setData("environment", std::shared_ptr<const tesseract_environment::Environment>(env_));
+    task_data->setData("profiles", profile_dict);
 
     // Update log level for debugging
     auto log_level = console_bridge::getLogLevel();
@@ -550,7 +548,7 @@ private:
     }
 
     // Run problem
-    tesseract_planning::TaskComposerFuture::UPtr result = executor->run(*task, problem, task_data);
+    tesseract_planning::TaskComposerFuture::UPtr result = executor->run(*task, task_data, true);
     result->wait();
 
     // Save the output dot graph

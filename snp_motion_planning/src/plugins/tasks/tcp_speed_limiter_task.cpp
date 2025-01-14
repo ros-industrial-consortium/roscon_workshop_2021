@@ -18,7 +18,6 @@
 #include <tesseract_task_composer/core/task_composer_plugin_factory.h>
 #include <tesseract_task_composer/core/task_composer_plugin_factory_utils.h>
 #include <tesseract_task_composer/core/task_composer_task_plugin_factory.h>
-#include <tesseract_task_composer/planning/planning_task_composer_problem.h>
 
 namespace snp_motion_planning
 {
@@ -30,37 +29,34 @@ public:
   using UPtr = std::unique_ptr<TCPSpeedLimiterTask>;
   using ConstUPtr = std::unique_ptr<const TCPSpeedLimiterTask>;
 
-  TCPSpeedLimiterTask() : tesseract_planning::TaskComposerTask(TCP_SPEED_LIMITER_TASK_NAME, true)
+  static tesseract_planning::TaskComposerNodePorts ports()
+  {
+    tesseract_planning::TaskComposerNodePorts ports;
+    ports.input_required["program"] = tesseract_planning::TaskComposerNodePorts::SINGLE;
+    ports.input_required["environment"] = tesseract_planning::TaskComposerNodePorts::SINGLE;
+    ports.input_required["profiles"] = tesseract_planning::TaskComposerNodePorts::SINGLE;
+    ports.output_required["program"] = tesseract_planning::TaskComposerNodePorts::SINGLE;
+    return ports;
+  }
+
+  TCPSpeedLimiterTask() : tesseract_planning::TaskComposerTask(TCP_SPEED_LIMITER_TASK_NAME, {}, true)
   {
   }
 
-  explicit TCPSpeedLimiterTask(std::string name, std::string input_key, std::string output_key,
+  explicit TCPSpeedLimiterTask(std::string name,
+                               std::string input_key,
+                               std::string output_key,
                                bool is_conditional = true)
-    : tesseract_planning::TaskComposerTask(std::move(name), is_conditional)
+      : tesseract_planning::TaskComposerTask(std::move(name), ports(), is_conditional)
   {
-    input_keys_.push_back(std::move(input_key));
-    output_keys_.push_back(std::move(output_key));
+    input_keys_.add("program", std::move(input_key));
+    output_keys_.add("program", std::move(output_key));
   }
 
   explicit TCPSpeedLimiterTask(std::string name, const YAML::Node& config,
                                const tesseract_planning::TaskComposerPluginFactory& /*plugin_factory*/)
-    : tesseract_planning::TaskComposerTask(std::move(name), config)
+      : tesseract_planning::TaskComposerTask(std::move(name), ports(), config)
   {
-    if (input_keys_.empty())
-      throw std::runtime_error("TCPSpeedLimiterTask, config missing 'inputs' entry");
-
-    if (input_keys_.size() > 1)
-      throw std::runtime_error("TCPSpeedLimiterTask, config 'inputs' entry currently only "
-                               "supports "
-                               "one input key");
-
-    if (output_keys_.empty())
-      throw std::runtime_error("TCPSpeedLimiterTask, config missing 'outputs' entry");
-
-    if (output_keys_.size() > 1)
-      throw std::runtime_error("TCPSpeedLimiterTask, config 'outputs' entry currently only "
-                               "supports "
-                               "one output key");
   }
 
   ~TCPSpeedLimiterTask() override = default;
@@ -78,21 +74,45 @@ protected:
     auto info = std::make_unique<tesseract_planning::TaskComposerNodeInfo>(*this);
     info->return_value = 0;
 
-    // Get the problem
-    auto& problem = dynamic_cast<tesseract_planning::PlanningTaskComposerProblem&>(*context.problem);
-
-    // --------------------
-    // Check that inputs are valid
-    // --------------------
-    auto input_data_poly = context.data_storage->getData(input_keys_[0]);
+    // Composite instruction input
+    auto input_data_poly = getData(*context.data_storage, "program");
+    if (input_data_poly.isNull() ||
+        input_data_poly.getType() != std::type_index(typeid(tesseract_planning::CompositeInstruction)))
+    {
+      info->status_message = "Input data " + input_keys_.get("program") + " is missing or of incorrect type";
+      CONSOLE_BRIDGE_logError("%s", info->status_message.c_str());
+      return info;
+    }
     auto& ci = input_data_poly.as<tesseract_planning::CompositeInstruction>();
     const tesseract_common::ManipulatorInfo& manip_info = ci.getManipulatorInfo();
 
+    // Get the environment input
+    auto env_poly = getData(*context.data_storage, "environment");
+    if (env_poly.isNull() ||
+        env_poly.getType() != std::type_index(typeid(std::shared_ptr<const tesseract_environment::Environment>)))
+    {
+      info->status_message = "Input data " + input_keys_.get("environment") + " is missing or of incorrect type";
+      CONSOLE_BRIDGE_logError("%s", info->status_message.c_str());
+      return info;
+    }
+    auto env = env_poly.as<std::shared_ptr<const tesseract_environment::Environment>>();
+
+    // Get the profile dictionary input
+    auto profiles_poly = getData(*context.data_storage, "profiles");
+    if (profiles_poly.isNull() ||
+        profiles_poly.getType() != std::type_index(typeid(std::shared_ptr<tesseract_planning::ProfileDictionary>)))
+    {
+      info->status_message = "Input data " + input_keys_.get("profiles") + " is missing or of incorrect type";
+      CONSOLE_BRIDGE_logError("%s", info->status_message.c_str());
+      return info;
+    }
+    auto profiles = profiles_poly.as<std::shared_ptr<tesseract_planning::ProfileDictionary>>();
+
     // Get Composite Profile
     std::string profile = ci.getProfile();
-    profile = tesseract_planning::getProfileString(name_, profile, problem.composite_profile_remapping);
+    // profile = tesseract_planning::getProfileString(name_, profile, problem.composite_profile_remapping);
     auto cur_composite_profile = tesseract_planning::getProfile<TCPSpeedLimiterProfile>(
-        name_, profile, *problem.profiles, std::make_shared<TCPSpeedLimiterProfile>());
+        name_, profile, *profiles, std::make_shared<TCPSpeedLimiterProfile>());
     cur_composite_profile =
         tesseract_planning::applyProfileOverrides(name_, profile, cur_composite_profile, ci.getProfileOverrides());
 
@@ -108,11 +128,11 @@ protected:
     // Solve using parameters
     tesseract_planning::TrajectoryContainer::Ptr trajectory =
         std::make_shared<tesseract_planning::InstructionsTrajectory>(ci);
-    const std::string joint_group = problem.env->getJointGroup(manip_info.manipulator)->getName();
+    const std::string joint_group = env->getJointGroup(manip_info.manipulator)->getName();
 
     try
     {
-      limitTCPSpeed(problem.env, *trajectory, joint_group, manip_info.tcp_frame, cur_composite_profile->max_speed);
+      limitTCPSpeed(env, *trajectory, joint_group, manip_info.tcp_frame, cur_composite_profile->max_speed);
     }
     catch (const std::exception& ex)
     {
@@ -122,7 +142,7 @@ protected:
 
     info->color = "green";
     info->status_message = "TCP speed limiter task succeeded";
-    context.data_storage->setData(output_keys_[0], input_data_poly);
+    context.data_storage->setData("program", input_data_poly);
     info->return_value = 1;
     return info;
   }

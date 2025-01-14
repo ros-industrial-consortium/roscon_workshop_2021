@@ -19,7 +19,6 @@
 #include <tesseract_task_composer/core/task_composer_plugin_factory.h>
 #include <tesseract_task_composer/core/task_composer_plugin_factory_utils.h>
 #include <tesseract_task_composer/core/task_composer_task_plugin_factory.h>
-#include <tesseract_task_composer/planning/planning_task_composer_problem.h>
 
 namespace snp_motion_planning
 {
@@ -31,35 +30,31 @@ public:
   using UPtr = std::unique_ptr<KinematicLimitsCheckTask>;
   using ConstUPtr = std::unique_ptr<const KinematicLimitsCheckTask>;
 
-  KinematicLimitsCheckTask() : tesseract_planning::TaskComposerTask(KINEMATIC_LIMITS_CHECK_TASK_NAME, true)
+  static tesseract_planning::TaskComposerNodePorts ports()
+  {
+    tesseract_planning::TaskComposerNodePorts ports;
+    ports.input_required["program"] = tesseract_planning::TaskComposerNodePorts::SINGLE;
+    ports.input_required["environment"] = tesseract_planning::TaskComposerNodePorts::SINGLE;
+    ports.input_required["profiles"] = tesseract_planning::TaskComposerNodePorts::SINGLE;
+    return ports;
+  }
+
+  KinematicLimitsCheckTask() : tesseract_planning::TaskComposerTask(KINEMATIC_LIMITS_CHECK_TASK_NAME, ports(), true)
   {
   }
 
-  explicit KinematicLimitsCheckTask(std::string name, std::string input_key, std::string output_key,
+  explicit KinematicLimitsCheckTask(std::string name,
+                                    std::string input_key,
                                     bool is_conditional = true)
-    : tesseract_planning::TaskComposerTask(std::move(name), is_conditional)
+      : tesseract_planning::TaskComposerTask(std::move(name), ports(), is_conditional)
   {
-    input_keys_.push_back(std::move(input_key));
-    output_keys_.push_back(std::move(output_key));
+    input_keys_.add("program", std::move(input_key));
   }
 
   explicit KinematicLimitsCheckTask(std::string name, const YAML::Node& config,
                                     const tesseract_planning::TaskComposerPluginFactory& /*plugin_factory*/)
-    : tesseract_planning::TaskComposerTask(std::move(name), config)
+      : tesseract_planning::TaskComposerTask(std::move(name), ports(), config)
   {
-    if (input_keys_.empty())
-      throw std::runtime_error("KinematicLimitsCheckTask, config missing 'inputs' entry");
-
-    if (input_keys_.size() > 1)
-      throw std::runtime_error("KinematicLimitsCheckTask, config 'inputs' entry currently only supports "
-                               "one input key");
-
-    if (output_keys_.empty())
-      throw std::runtime_error("KinematicLimitsCheckTask, config missing 'outputs' entry");
-
-    if (output_keys_.size() > 1)
-      throw std::runtime_error("KinematicLimitsCheckTask, config 'outputs' entry currently only supports "
-                               "one output key");
   }
 
   ~KinematicLimitsCheckTask() override = default;
@@ -89,29 +84,45 @@ protected:
     auto info = std::make_unique<tesseract_planning::TaskComposerNodeInfo>(*this);
     info->return_value = 0;
 
-    // Get the problem
-    auto& problem = dynamic_cast<tesseract_planning::PlanningTaskComposerProblem&>(*context.problem);
-
-    // --------------------
-    // Check that inputs are valid
-    // --------------------
-    auto input_data_poly = context.data_storage->getData(input_keys_[0]);
+    // Get the input composite instruction
+    auto input_data_poly = getData(*context.data_storage, "program");
     if (input_data_poly.isNull() ||
         input_data_poly.getType() != std::type_index(typeid(tesseract_planning::CompositeInstruction)))
     {
-      info->status_message = "Input results to kinimatic limits check must be a composite instruction";
+      info->status_message = "Input '" + input_keys_.get("program") + "' is missing or of incorrect type";
       CONSOLE_BRIDGE_logError("%s", info->status_message.c_str());
       return info;
     }
-
     auto& ci = input_data_poly.as<tesseract_planning::CompositeInstruction>();
     const tesseract_common::ManipulatorInfo& manip_info = ci.getManipulatorInfo();
 
+    // Get the environment input
+    auto env_poly = getData(*context.data_storage, "environment");
+    if (env_poly.isNull() ||
+        env_poly.getType() != std::type_index(typeid(std::shared_ptr<const tesseract_environment::Environment>)))
+    {
+      info->status_message = "Input data " + input_keys_.get("environment") + " is missing or of incorrect type";
+      CONSOLE_BRIDGE_logError("%s", info->status_message.c_str());
+      return info;
+    }
+    auto env = env_poly.as<std::shared_ptr<const tesseract_environment::Environment>>();
+
+    // Get the profile dictionary input
+    auto profiles_poly = getData(*context.data_storage, "profiles");
+    if (profiles_poly.isNull() ||
+        profiles_poly.getType() != std::type_index(typeid(std::shared_ptr<tesseract_planning::ProfileDictionary>)))
+    {
+      info->status_message = "Input data " + input_keys_.get("profiles") + " is missing or of incorrect type";
+      CONSOLE_BRIDGE_logError("%s", info->status_message.c_str());
+      return info;
+    }
+    auto profiles = profiles_poly.as<std::shared_ptr<tesseract_planning::ProfileDictionary>>();
+
     // Get Composite Profile
     std::string profile = ci.getProfile();
-    profile = tesseract_planning::getProfileString(name_, profile, problem.composite_profile_remapping);
+    // profile = tesseract_planning::getProfileString(name_, profile, problem.composite_profile_remapping);
     auto cur_composite_profile = tesseract_planning::getProfile<KinematicLimitsCheckProfile>(
-        name_, profile, *problem.profiles, std::make_shared<KinematicLimitsCheckProfile>());
+        name_, profile, *profiles, std::make_shared<KinematicLimitsCheckProfile>());
     cur_composite_profile =
         tesseract_planning::applyProfileOverrides(name_, profile, cur_composite_profile, ci.getProfileOverrides());
 
@@ -129,7 +140,7 @@ protected:
         std::make_shared<tesseract_planning::InstructionsTrajectory>(ci);
 
     // Extract the motion group
-    tesseract_kinematics::JointGroup::ConstPtr motion_group = problem.env->getJointGroup(manip_info.manipulator);
+    tesseract_kinematics::JointGroup::ConstPtr motion_group = env->getJointGroup(manip_info.manipulator);
 
     // Check the trajectory limits
     for (Eigen::Index i = 0; i < trajectory->size(); ++i)

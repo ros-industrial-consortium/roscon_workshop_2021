@@ -36,7 +36,6 @@ target_link_libraries(
   tesseract::tesseract_common
   tesseract::tesseract_command_language
   tesseract::tesseract_task_composer
-  tesseract::tesseract_task_composer_planning
   tesseract::tesseract_task_composer_planning_nodes
   tesseract::tesseract_motion_planners_core
   tesseract::tesseract_motion_planners_simple
