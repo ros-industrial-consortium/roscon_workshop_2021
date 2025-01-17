@@ -28,7 +28,7 @@ find_package(rviz_polygon_selection_tool REQUIRED)
 find_package(snp_msgs REQUIRED)
 find_package(tf2_eigen REQUIRED)
 
-# Custom mesh modifier
+# Custom mesh modifier and snp planner
 qt5_wrap_ui(${PROJECT_NAME}_ui_mocs ui/roi_selection_mesh_modifier_widget.ui ui/snp_raster_planner_widget.ui)
 qt5_wrap_cpp(${PROJECT_NAME}_mocs include/${PROJECT_NAME}/roi_selection_mesh_modifier_widget.h
              include/${PROJECT_NAME}/snp_raster_planner_widget.h)
@@ -51,9 +51,31 @@ ament_target_dependencies(
   snp_msgs
   tf2_eigen)
 
+# Custom drawn planner
+qt5_wrap_ui(${PROJECT_NAME}_ui_drawn_mocs ui/drawn_toolpath_planner_widget.ui)
+qt5_wrap_cpp(${PROJECT_NAME}_drawn_mocs include/${PROJECT_NAME}/drawn_toolpath_planner_widget.h)
+add_library(
+  ${PROJECT_NAME}_drawn_toolpath_planner SHARED
+  src/drawn_toolpath_planner.cpp
+  src/drawn_toolpath_planner_widget.cpp
+  ${${PROJECT_NAME}_ui_drawn_mocs}
+  ${${PROJECT_NAME}_drawn_mocs})
+target_include_directories(
+  ${PROJECT_NAME}_drawn_toolpath_planner
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
+         "$<INSTALL_INTERFACE:include>")
+target_link_libraries(${PROJECT_NAME}_drawn_toolpath_planner noether::noether_tpp noether::noether_gui)
+ament_target_dependencies(
+  ${PROJECT_NAME}_drawn_toolpath_planner
+  geometry_msgs
+  rviz_polygon_selection_tool
+  rclcpp
+  snp_msgs
+  tf2_eigen)
+
 # Noether plugin library
 add_library(${PROJECT_NAME}_plugins SHARED src/plugins.cpp)
-target_link_libraries(${PROJECT_NAME}_plugins ${PROJECT_NAME}_mesh_modifier)
+target_link_libraries(${PROJECT_NAME}_plugins ${PROJECT_NAME}_mesh_modifier ${PROJECT_NAME}_drawn_toolpath_planner)
 
 # Custom TPP widget
 qt5_wrap_cpp(${PROJECT_NAME}_widget_mocs include/${PROJECT_NAME}/tpp_widget.h)
@@ -77,8 +99,13 @@ install(DIRECTORY include/${PROJECT_NAME} DESTINATION include)
 install(TARGETS ${PROJECT_NAME}_app DESTINATION lib/${PROJECT_NAME})
 
 # Install the library(ies)
-install(TARGETS ${PROJECT_NAME}_mesh_modifier ${PROJECT_NAME}_plugins ${PROJECT_NAME}_widget
-        EXPORT ${PROJECT_NAME}-targets DESTINATION lib)
+install(
+  TARGETS ${PROJECT_NAME}_mesh_modifier
+          ${PROJECT_NAME}_drawn_toolpath_planner
+          ${PROJECT_NAME}_plugins
+          ${PROJECT_NAME}_widget
+  EXPORT ${PROJECT_NAME}-targets
+  DESTINATION lib)
 ament_export_targets(${PROJECT_NAME}-targets HAS_LIBRARY_TARGET)
 ament_export_dependencies(
   noether_tpp
