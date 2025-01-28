@@ -13,32 +13,8 @@ MinLengthTask: &min_length
   config:
     conditional: true
     inputs: [input_data]
-    outputs: [output_data]
+    outputs: [min_len_output_data]
     format_result_as_input: false
-TrajOptMotionPlannerTask: &trajopt
-  class: TrajOptMotionPlannerTaskFactory
-  config:
-    conditional: true
-    inputs: [output_data]
-    outputs: [output_data]
-    format_result_as_input: false
-DiscreteContactCheckTask: &contact_check
-  class: DiscreteContactCheckTaskFactory
-  config:
-    conditional: true
-    inputs: [output_data]
-ConstantTCPSpeedTimeParameterizationTask: &constant_tcp_speed
-  class: ConstantTCPSpeedTimeParameterizationTaskFactory
-  config:
-    conditional: true
-    inputs: [output_data]
-    outputs: [output_data]
-IterativeSplineParameterizationTask: &isp
-  class: IterativeSplineParameterizationTaskFactory
-  config:
-    conditional: true
-    inputs: [output_data]
-    outputs: [output_data]
 KinematicLimitsCheckTask: &limits_check
   class: KinematicLimitsCheckTaskFactory
   config:
@@ -68,9 +44,24 @@ task_composer_plugins:
             DoneTask: *done
             ErrorTask: *error
             MinLengthTask: *min_length
-            TrajOptMotionPlannerTask: *trajopt
-            DiscreteContactCheckTask: *contact_check
-            ConstantTCPSpeedTimeParameterizationTask: *constant_tcp_speed
+            TrajOptMotionPlannerTask:
+              class: TrajOptMotionPlannerTaskFactory
+              config:
+                conditional: true
+                inputs: [min_len_output_data]
+                outputs: [trajopt_output_data]
+                format_result_as_input: false
+            DiscreteContactCheckTask:
+              class: DiscreteContactCheckTaskFactory
+              config:
+                conditional: true
+                inputs: [trajopt_output_data]
+            ConstantTCPSpeedTimeParameterizationTask:
+              class: ConstantTCPSpeedTimeParameterizationTaskFactory
+              config:
+                conditional: true
+                inputs: [trajopt_output_data]
+                outputs: [output_data]
             KinematicLimitsCheckTask: *limits_check
           edges:
             - source: MinLengthTask
@@ -92,22 +83,43 @@ task_composer_plugins:
           nodes:
             DoneTask: *done
             ErrorTask: *error
-            MinLengthTask: *min_length
             OMPLMotionPlannerTask:
               class: OMPLMotionPlannerTaskFactory
               config:
                 conditional: true
-                inputs: [output_data]
-                outputs: [output_data]
+                inputs: [input_data]
+                outputs: [ompl_output_data]
                 format_result_as_input: true
-            TrajOptMotionPlannerTask: *trajopt
-            DiscreteContactCheckTask: *contact_check
-            IterativeSplineParameterizationTask: *isp
+            MinLengthTask:
+              class: MinLengthTaskFactory
+              config:
+                conditional: true
+                inputs: [ompl_output_data]
+                outputs: [min_len_output_data]
+                format_result_as_input: false
+            TrajOptMotionPlannerTask:
+              class: TrajOptMotionPlannerTaskFactory
+              config:
+                conditional: true
+                inputs: [min_len_output_data]
+                outputs: [trajopt_output_data]
+                format_result_as_input: false
+            DiscreteContactCheckTask:
+              class: DiscreteContactCheckTaskFactory
+              config:
+                conditional: true
+                inputs: [trajopt_output_data]
+            IterativeSplineParameterizationTask:
+              class: IterativeSplineParameterizationTaskFactory
+              config:
+                conditional: true
+                inputs: [trajopt_output_data]
+                outputs: [output_data]
             KinematicLimitsCheckTask: *limits_check
           edges:
-            - source: MinLengthTask
-              destinations: [ErrorTask, OMPLMotionPlannerTask]
             - source: OMPLMotionPlannerTask
+              destinations: [ErrorTask, MinLengthTask]
+            - source: MinLengthTask
               destinations: [ErrorTask, TrajOptMotionPlannerTask]
             - source: TrajOptMotionPlannerTask
               destinations: [ErrorTask, DiscreteContactCheckTask]
@@ -127,27 +139,57 @@ task_composer_plugins:
             DoneTask: *done
             ErrorTask: *error
             MinLengthTask: *min_length
-            TrajOptMotionPlannerTask: *trajopt
+            TrajOptMotionPlannerTask:
+              class: TrajOptMotionPlannerTaskFactory
+              config:
+                conditional: true
+                inputs: [min_len_output_data]
+                outputs: [trajopt_output_data]
+                format_result_as_input: false
             OMPLMotionPlannerTask:
               class: OMPLMotionPlannerTaskFactory
               config:
                 conditional: true
-                inputs: [output_data]
-                outputs: [output_data]
+                inputs: [input_data]
+                outputs: [ompl_output_data]
                 format_result_as_input: false
-            DiscreteContactCheckTask: *contact_check
-            IterativeSplineParameterizationTask: *isp
+            DiscreteContactCheckTask_TrajOpt:
+              class: DiscreteContactCheckTaskFactory
+              config:
+                conditional: true
+                inputs: [trajopt_output_data]
+            DiscreteContactCheckTask_OMPL:
+              class: DiscreteContactCheckTaskFactory
+              config:
+                conditional: true
+                inputs: [ompl_output_data]
+            IterativeSplineParameterizationTask_TrajOpt:
+              class: IterativeSplineParameterizationTaskFactory
+              config:
+                conditional: true
+                inputs: [trajopt_output_data]
+                outputs: [output_data]
+            IterativeSplineParameterizationTask_OMPL:
+              class: IterativeSplineParameterizationTaskFactory
+              config:
+                conditional: true
+                inputs: [ompl_output_data]
+                outputs: [output_data]
             KinematicLimitsCheckTask: *limits_check
           edges:
             - source: MinLengthTask
               destinations: [ErrorTask, TrajOptMotionPlannerTask]
             - source: TrajOptMotionPlannerTask
-              destinations: [OMPLMotionPlannerTask, DiscreteContactCheckTask]
+              destinations: [OMPLMotionPlannerTask, DiscreteContactCheckTask_TrajOpt]
+            - source: DiscreteContactCheckTask_TrajOpt
+              destinations: [OMPLMotionPlannerTask, IterativeSplineParameterizationTask_TrajOpt]
+            - source: IterativeSplineParameterizationTask_TrajOpt
+              destinations: [ErrorTask, KinematicLimitsCheckTask]
             - source: OMPLMotionPlannerTask
-              destinations: [ErrorTask, DiscreteContactCheckTask]
-            - source: DiscreteContactCheckTask
-              destinations: [ErrorTask, IterativeSplineParameterizationTask]
-            - source: IterativeSplineParameterizationTask
+              destinations: [ErrorTask, DiscreteContactCheckTask_OMPL]
+            - source: DiscreteContactCheckTask_OMPL
+              destinations: [ErrorTask, IterativeSplineParameterizationTask_OMPL]
+            - source: IterativeSplineParameterizationTask_OMPL
               destinations: [ErrorTask, KinematicLimitsCheckTask]
             - source: KinematicLimitsCheckTask
               destinations: [ErrorTask, DoneTask]
@@ -160,47 +202,54 @@ task_composer_plugins:
           nodes:
             DoneTask: *done
             ErrorTask: *error
-            SimpleMotionPlannerTask:
-              class: SimpleMotionPlannerTaskFactory
-              config:
-                conditional: true
-                inputs: [input_data]
-                outputs: [output_data]
-                format_result_as_input: true
             DescartesMotionPlannerTask:
               class: DescartesFMotionPlannerTaskFactory
               config:
                 conditional: true
-                inputs: [output_data]
-                outputs: [output_data]
+                inputs: [input_data]
+                outputs: [descartes_output_data]
                 format_result_as_input: true
             RasterMotionTask:
               class: RasterMotionTaskFactory
               config:
                 conditional: true
-                inputs: [output_data]
+                inputs: [descartes_output_data]
                 outputs: [output_data]
                 freespace:
                   task: SNPFreespacePipeline
                   config:
                     remapping:
-                      input_data: output_data
+                      input_data: input_data
                       output_data: output_data
-                    indexing: [output_data]
+                    indexing:
+                      - input_data
+                      - output_data
+                      - min_len_output_data
+                      - trajopt_output_data
+                      - ompl_output_data
                 raster:
                   task: SNPCartesianPipeline
                   config:
                     remapping:
-                      input_data: output_data
+                      input_data: input_data
                       output_data: output_data
-                    indexing: [output_data]
+                    indexing:
+                      - input_data
+                      - output_data
+                      - min_len_output_data
+                      - trajopt_output_data
                 transition:
                   task: SNPTransitionPipeline
                   config:
                     remapping:
-                      input_data: output_data
+                      input_data: input_data
                       output_data: output_data
-                    indexing: [output_data]
+                    indexing:
+                      - input_data
+                      - output_data
+                      - min_len_output_data
+                      - trajopt_output_data
+                      - ompl_output_data
             TCPSpeedLimiterTask:
               class: TCPSpeedLimiterTaskFactory
               config:
@@ -208,8 +257,6 @@ task_composer_plugins:
                 inputs: [output_data]
                 outputs: [output_data]
           edges:
-            - source: SimpleMotionPlannerTask
-              destinations: [ErrorTask, DescartesMotionPlannerTask]
             - source: DescartesMotionPlannerTask
               destinations: [ErrorTask, RasterMotionTask]
             - source: RasterMotionTask

@@ -170,7 +170,7 @@ std::shared_ptr<tesseract_planning::TrajOptDefaultCompositeProfile> createTrajOp
 
   profile->contact_test_type = tesseract_collision::ContactTestType::CLOSEST;
 
-  profile->collision_cost_config.enabled = true;
+  profile->collision_cost_config.enabled = false;
   profile->collision_cost_config.type = trajopt::CollisionEvaluatorType::DISCRETE_CONTINUOUS;
   profile->collision_cost_config.safety_margin = min_contact_distance;
   profile->collision_cost_config.safety_margin_buffer = std::max(0.020, 2 * min_contact_distance);
@@ -182,7 +182,11 @@ std::shared_ptr<tesseract_planning::TrajOptDefaultCompositeProfile> createTrajOp
     profile->special_collision_cost->setPairSafetyMarginData(pair.first, pair.second, pair.distance,
                                                              profile->collision_cost_config.coeff);
 
-  profile->collision_constraint_config.enabled = false;
+  profile->collision_constraint_config.enabled = true;
+  profile->collision_constraint_config.type = trajopt::CollisionEvaluatorType::DISCRETE_CONTINUOUS;
+  profile->collision_constraint_config.safety_margin = min_contact_distance;
+  profile->collision_constraint_config.safety_margin_buffer = std::max(0.020, 2 * min_contact_distance);
+  profile->collision_constraint_config.coeff = 10.0;
 
   return profile;
 }

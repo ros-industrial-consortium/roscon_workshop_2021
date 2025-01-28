@@ -42,6 +42,7 @@
 #include <tesseract_task_composer/planning/profiles/iterative_spline_parameterization_profile.h>
 #include <tesseract_task_composer/planning/profiles/min_length_profile.h>
 #include <trajopt_common/eigen_conversions.hpp>
+#include <filesystem>
 #if __has_include(<tf2_eigen/tf2_eigen.hpp>)
 #include <tf2_eigen/tf2_eigen.hpp>
 #else
@@ -502,6 +503,70 @@ private:
     return profile_dict;
   }
 
+  void storeAndPlotDebugTrajectories(const tesseract_planning::TaskComposerNode::UPtr& task,
+                                     const tesseract_planning::TaskComposerFuture::UPtr& result)
+  {
+    // Make debug directory
+    std::string time_stamp = tesseract_common::getTimestampString();
+    std::filesystem::path tmp_directory("/tmp");
+    std::filesystem::path snp_parent_dir("SNP_Planning");
+    std::filesystem::path timestamped_dir("Plan_" + time_stamp);
+    std::filesystem::path debug_directory = tmp_directory / snp_parent_dir / timestamped_dir;
+    std::filesystem::create_directories(debug_directory);
+    RCLCPP_INFO_STREAM(node_->get_logger(), "Saving to: " << debug_directory);
+
+    // Add debug trajectories to be plottable
+    auto all_data = result->context->data_storage->getData();
+
+    // Store each intermediate CI
+    std::map<std::string, tesseract_msgs::msg::Trajectory> debug_traj_map;
+    for (const auto& pair : all_data)
+    {
+      // Store CI key as a string
+      std::string key = pair.first;
+
+      auto ci_debug = result->context->data_storage->getData(key).as<tesseract_planning::CompositeInstruction>();
+
+      // Save all raw CIs to files to aid with debugging if necessary
+      std::filesystem::path intermediate_ci_dir = debug_directory / std::filesystem::path("intermediate_ci");
+      std::filesystem::create_directories(intermediate_ci_dir);
+      tesseract_common::Serialization::toArchiveFileXML(ci_debug,
+                                                        intermediate_ci_dir / std::filesystem::path(key + ".xml"));
+
+      // Check if any CIs with this description have been seen before
+      if (debug_traj_map.find(ci_debug.getDescription()) == debug_traj_map.end())
+      {
+        // Initialize Trajectory msg for CIs with this description
+        tesseract_msgs::msg::Trajectory traj_msg;
+        tesseract_rosutils::toMsg(traj_msg.environment, env_);
+        traj_msg.ns = "DEBUG_" + time_stamp;
+        traj_msg.description = ci_debug.getDescription();
+        debug_traj_map[ci_debug.getDescription()] = traj_msg;
+      }
+
+      // Make tesseract joint trajectory msg for plotting
+      tesseract_common::JointTrajectory traj_debug = toJointTrajectory(ci_debug);
+      traj_debug.description = key;
+      tesseract_msgs::msg::JointTrajectory jt_msg;
+      tesseract_rosutils::toMsg(jt_msg, traj_debug);
+      // Add this message to the map, corresponding to other CIs with matching descriptions
+      debug_traj_map[ci_debug.getDescription()].joint_trajectories.push_back(jt_msg);
+    }
+
+    // Plot all the data
+    for (const auto& entry : debug_traj_map)
+    {
+      plotter_->plotTrajectory(entry.second);
+      // Add delay to deal with ROS plotting using message interface to avoid losing data
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    // Save results dot graph
+    std::filesystem::path results_dot("Results.dot");
+    std::ofstream tc_out_results(debug_directory / results_dot);
+    task->dump(tc_out_results, nullptr, result->context->task_infos.getInfoMap());
+  }
+
   tesseract_planning::CompositeInstruction plan(const tesseract_planning::CompositeInstruction& program,
                                                 tesseract_planning::ProfileDictionary::Ptr profile_dict,
                                                 const std::string& task_name)
@@ -553,12 +618,8 @@ private:
     tesseract_planning::TaskComposerFuture::UPtr result = executor->run(*task, problem, task_data);
     result->wait();
 
-    // Save the output dot graph
-    {
-      std::ofstream tc_out_results(tesseract_common::getTempPath() + task_name + "_results.dot");
-      static_cast<const tesseract_planning::TaskComposerGraph&>(*task).dump(tc_out_results, nullptr,
-                                                                            result->context->task_infos.getInfoMap());
-    }
+    // Save the output motion planning data
+    storeAndPlotDebugTrajectories(task, result);
 
     // Reset the log level
     console_bridge::setLogLevel(log_level);
