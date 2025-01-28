@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [foxy, humble, rolling]
+        distro: [foxy, humble, jazzy, rolling]
     container:
       image: ghcr.io/tesseract-robotics/tesseract_ros2:${{ matrix.distro }}-0.22
       env:
