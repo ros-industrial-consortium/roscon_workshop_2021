@@ -128,7 +128,7 @@
       </Progress>
       <Progress start="20"
                 end="40">
-        <Sequence>
+        <Sequence _skipIf="skip_scan">
           <SetPage index="3">
             <ButtonApproval name="Approve Scan Execution"
                             approve_button="execute"
@@ -149,11 +149,13 @@
             <ButtonApproval name="Approve Tool Path Plan"
                             approve_button="tpp"
                             disapprove_button="back"
-                            _description="Press next to create a tool path plan"/>
+                            _description="Press next to create a tool path plan"
+                            _onFailure="skip_scan=false&#10;"/>
           </SetPage>
           <GenerateToolPathsService name="Generate Tool Paths"
                                     service_name="generate_tool_paths"
-                                    tool_paths="{tool_paths}"/>
+                                    tool_paths="{tool_paths}"
+                                    _onFailure="skip_scan=true&#10;"/>
           <ToolPathsPub name="Publish Tool Paths"
                         topic_name="tool_paths"
                         tool_paths="{tool_paths}"/>
